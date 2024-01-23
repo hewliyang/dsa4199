@@ -1,0 +1,17 @@
+\chapter{Conclusion and discussion}
+\label{ch:concl}
+
+Our comprehensive exploration into the behavior of pruning at initialization techniques at extreme sparsity levels has shed light on the intriguing insensitivity to layerwise shuffling of SNIP, GraSP, and SynFlow. In particular, our investigation not only reaffirmed the phenomenon of ``neuron collapse'' in SynFlow, initially proposed by \textcite{frankle21}, but also suggested that a similar phenomenon occurs in SNIP and GraSP.
+
+We also delved into the improved performance of SynFlow-pruned networks after layerwise shuffling, a phenomenon particularly prominent at extreme sparsities. Our experiments demonstrated that increasing the percentage of effective neurons, achieved through novel scoring adjustments like SynFlow-Square, SynFlow-Cube, and SynFlow-Exp, could lead to sensitivity to layerwise shuffling at 99\% sparsity in ResNet-20 and VGG-16 networks. Notably, our variants of SynFlow also outperformed the original SynFlow at this high sparsity level.
+
+However, intriguingly, this sensitivity did not manifest in a similar manner at 90\% sparsity, even when the percentage of effective neurons was significantly increased. This suggests that while neuron collapse might explain improved performance after shuffling at very high sparsities, it may not be the sole determinant of behavior at lower sparsities.
+
+Our case study involving magnitude pruning further strengthened this hypothesis. We observed increased accuracy after shuffling magnitude-pruned ResNet-20 networks, despite the pruned networks before shuffling having slightly more effective paths and neurons. This highlights that while these effective metrics offer valuable insights into model performance, they do not provide a complete explanation. Overall, while our work provides support for the Node-Path Balancing Principle proposed by \textcite{pham23}, highlighting that these effective metrics offer valuable insights into model performance, they do not provide a complete explanation.
+
+In summary, our findings collectively suggest that the relationship between neuron collapse, the number of effective paths and neurons, and sensitivity to layerwise shuffling is complex and not fully understood. Given that our simple SynFlow variants have outperformed SynFlow, it suggests that the effective metrics can be optimized to attain high accuracy with pruning techniques. Further research is warranted to unravel the intricate mechanisms governing the behavior of networks pruned at initialization at different sparsity levels.
+
+% \section{Future Research Directions}
+
+% \lipsum[4]
+

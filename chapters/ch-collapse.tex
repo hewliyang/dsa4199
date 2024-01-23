@@ -1,0 +1,135 @@
+\SetPicSubDir{ch-Collapse}
+\SetExpSubDir{ch-Collapse}
+
+\chapter{Investigating neuron collapse}
+\label{ch:collapse}
+\vspace{1em}
+
+To explain SynFlow's improved performance at extreme sparsities after layerwise shuffling, \textcite{frankle21} suggests that the cause is neuron collapse, which is inherent to SynFlow. In this chapter, we assess whether SynFlow is more likely to prune entire neurons more often than other methods for pruning at initialization.
+
+
+\section{Methods}
+\subsection{Investigating path norms}
+Although \textcite{frankle21} presents the connection between SynFlow's scoring metric and path norm, the authors did not provide any empirical evidence to show the effect of layerwise shuffling on the network's path norms.
+
+Since the SynFlow score of each weight is shown to be equivalent to its $(l_{1,1})$ path norm, we adapted the code from \textcite{synflow20} to display the scores before and after layerwise shuffling.
+
+\subsection{Comparing effective metrics}
+\label{sec:effective}
+\textcite{frankle21} shows that SynFlow prunes neurons at higher rate than SNIP and GraSP at the highest sparsities on ResNet-20, VGG-16, ResNet-18, and ResNet-50. We verified this by comparing the number of effective neurons and paths, based on the approach used in \textcite{frankle21} and \textcite{pham23}.
+
+The procedure used to calculate the number of effective neurons and paths is as follows:
+\begin{enumerate}
+    \item Set each weight in the network to 0 if it is pruned or 1 if it is not (i.e., the same value as the pruning mask).
+    \item Perform forward pass with an input of all 1s.
+    \item Calculate the sum of the logits. This sum is the number of effective paths.
+    \item Calculate the gradients with respect to the sum of the logits.
+    \item Find the total number of non-zero gradients. This is the number of effective weights.
+    \item For each gradient, calculate the column-wise sum. The number of effective neurons is the number of non-zero columns.
+\end{enumerate}
+
+Here is a brief explanation:
+
+\textbf{Effective paths.} Since the input and the weights are all non-negative and ReLU is used as the activation function, we can treat the network as not having an activation function. Then, since the input is an all-ones vector, the value of each neuron is the same as the sum of the product of the weights along every path to that neuron. As we set each weight to 0 if it is pruned or 1 if it is not, the product of the weights along every path is 1 if the path is effective and 0 otherwise. Hence, each logit is the number of effective paths to the respective output neuron, and the sum of the logits is the total number of effective paths in the network. Similar to \textcite{pham23}, we also present the log scale of the number of effective paths since the number is very large.
+
+\textbf{Effective weights.} Any weights with a gradient of 0 must be disconnected from the output of the network. As such, these weights are not part of any effective paths.
+
+\textbf{Effective neurons.} The gradients calculated are per-layer gradients, where each column represents the gradient at each individual neuron. By taking the column-wise sum, we obtain the number of effective weights connected to each neuron. Any neuron with a column-wise sum value of 0 must not be connected to any effective weights and is thus not an effective neuron.
+
+\section{Results}
+As seen in the distribution of path norms below, path norms decrease with pruning iterations. This is expected since as more weights are pruned, the number of effective paths decreases, which means that the path norm at each weight decreases.
+
+Interestingly, path norms also drop significantly after layerwise shuffling. At first, this appears to be in contrast with \textcite{frankle21}'s assertion that SynFlow's neuron collapse results from a decrease in path norm at the weights connected to the neuron, which suggests that layerwise shuffling should mitigate this issue.
+
+\begin{figure}[!h]
+  \centering
+  \includegraphics[width=\linewidth]{\Pic{png}{resnet20_dist}}
+  \vspace{\BeforeCaptionVSpace}
+  \caption{Path norms during pruning and after layerwise shuffling in ResNet-20}
+  \label{Collapse:fig:path_resnet}
+\end{figure}
+\newpage
+\begin{figure}[!h]
+  \centering
+  \includegraphics[width=\linewidth]{\Pic{png}{vgg16_dist}}
+  \vspace{\BeforeCaptionVSpace}
+  \caption{Path norms during pruning and after layerwise shuffling in VGG-16}
+  \label{Collapse:fig:vgg16}
+\end{figure}
+One possible reason is that at extreme sparsities, there are very few weights left unpruned. If SynFlow often prunes entire neurons, most of these weights are connected to a small number of neurons (i.e., the remaining effective weights and neurons form a dense graph). As such, after shuffling the weights layer-wise, a large portion of the effective paths may be lost (e.g., some unpruned incoming weights may be connected to a neuron where all outgoing weights are pruned), which would explain the sharp decrease in path norms in every layer.
+
+To verify this, we evaluate the layerwise ratios of effective weights. Since the score of each weight is the path norm at that weight, if the score is non-zero, there must be at least an effective path through this weight. Hence, we need to consider the ratio of non-zero scores in each layer.
+
+\begin{figure}[!h]
+  \centering
+  \includegraphics[width=\linewidth, height=7.7cm]{\Pic{png}{resnet20_ratio}}
+  \vspace{\BeforeCaptionVSpace}
+  \caption{Ratios of non-zero path norms before and after shuffling in ResNet-20}
+  \label{Collapse:fig:resnet20}
+\end{figure}
+\begin{figure}[!h]
+  \centering
+  \includegraphics[width=\linewidth, height=7.7cm]{\Pic{png}{vgg16_ratio}}
+  \vspace{\BeforeCaptionVSpace}
+  \caption{Ratios of non-zero path norms before and after shuffling in VGG-16}
+  \label{Collapse:fig:path_vgg}
+\end{figure}
+\newpage
+This supports our claim above that layerwise shuffling reduces the number of effective paths after the network is pruned with SynFlow. The results of Experiment \autoref{sec:effective} confirm this hypothesis.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|}
+\hline
+        & \multicolumn{2}{c|}{$\log(\text{Effective paths})$} & \multicolumn{2}{c|}{Effective neurons} \\ \cline{2-5} 
+        & Before            & After            & Before             & After             \\ \hline
+SNIP    & $35.73$         & $31.41$        & 3322 (57.13\%)      & 5724 (98.44\%)    \\ \hline
+GraSP   & $34.07$         & $30.73$        & 3899 (67.05\%)     & 5712 (98.23\%)    \\ \hline
+SynFlow & $37.34$         & $33.49$        & 3233 (55.60\%)     & 5573 (95.84\%)    \\ \hline
+\end{tabular}
+\caption{Effective metrics before and after shuffling in ResNet-20 ($\kappa=90\%$)}
+\label{table:resnet20-90}
+\end{table}
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|}
+\hline
+        & \multicolumn{2}{c|}{$\log(\text{Effective paths})$} & \multicolumn{2}{c|}{Effective neurons} \\ \cline{2-5} 
+        & Before            & After            & Before             & After             \\ \hline
+SNIP    & $19.96$         & $13.29$        & 898 (15.45\%)      & 1750 (30.09\%)    \\ \hline
+GraSP   & $22.21$         & $13.96$        & 1128 (19.40\%)     & 1832 (31.50\%)    \\ \hline
+SynFlow & $27.18$         & $14.12$        & 1055 (18.14\%)     & 1888 (32.47\%)    \\ \hline
+\end{tabular}
+\caption{Effective metrics before and after shuffling in ResNet-20 ($\kappa=99\%$)}
+\label{table:resnet20-99}
+\end{table}
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|}
+\hline
+        & \multicolumn{2}{c|}{$\log(\text{Effective paths})$} & \multicolumn{2}{c|}{Effective neurons} \\ \cline{2-5} 
+        & Before            & After            & Before             & After             \\ \hline
+SNIP    & $35.54$         & $33.67$        & 25164 (74.02\%)      & 33987 (99.97\%)    \\ \hline
+GraSP   & $34.55$         & $33.04$        & 29353 (86.34\%)     & 33987 (99.97\%)    \\ \hline
+SynFlow & $37.36$         & $34.92$        & 20935 (61.58\%)     & 33987 (99.97\%)    \\ \hline
+\end{tabular}
+\caption{Effective metrics before and after shuffling in VGG-16 ($\kappa=90\%$)}
+\label{table:vgg16-90}
+\end{table}
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|}
+\hline
+        & \multicolumn{2}{c|}{$\log(\text{Effective paths})$} & \multicolumn{2}{c|}{Effective neurons} \\ \cline{2-5} 
+        & Before            & After            & Before             & After             \\ \hline
+SNIP    & $25.93$         & $22.31$        & 13181 (38.77\%)      & 32889 (96.74\%)    \\ \hline
+GraSP   & $26.29$         & $22.15$        & 15651 (46.03\%)     & 30154 (88.70\%)    \\ \hline
+SynFlow & $30.75$         & $22.98$        & 7431 (21.86\%)     & 32098 (94.41\%)    \\ \hline
+\end{tabular}
+\caption{Effective metrics before and after shuffling in VGG-16 ($\kappa=99\%$)}
+\label{table:vgg16-99}
+\end{table}
+As observed, the number of effective paths decreases drastically after shuffling SynFlow-pruned ResNet-20 and VGG-16 networks layerwise, while the number of effective neurons increases. These findings lend support to the hypothesis of neuron collapse, with layerwise shuffling ``restoring'' a significant portion of neurons, leading to improvements in performance.
+
+In contrast to the findings of \textcite{frankle21}, our observations suggest that ResNet-20 networks pruned with SNIP and GraSP exhibit similar percentages of effective neurons before shuffling, even with different random seeds. This implies that SNIP and GraSP are also susceptible to neuron collapse, which may account for their insensitivity to shuffling. For VGG-16 networks, SynFlow does indeed prune entire neurons at a higher rate compared to the other two methods, but the difference is not as pronounced as reported in \textcite{frankle21}.
+

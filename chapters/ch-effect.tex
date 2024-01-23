@@ -1,0 +1,187 @@
+\SetPicSubDir{ch-Effect}
+\SetExpSubDir{ch-Effect}
+
+\chapter{Effect of neuron collapse}
+\label{ch:effect}
+\vspace{1em}
+
+In the previous chapter, we established that neuron collapse occurs in all three pruning at initialization methods: SNIP, GraSP, and SynFlow. While \textcite{frankle21} suggests neuron collapse as a possible cause of SynFlow's insensitivity to layer shuffling, no empirical evidence is provided. Therefore, our experiments aim to verify this hypothesis.
+
+\section{Methods}
+To avoid neuron collapse, we consider the ratio of the number of unpruned weights to the total number of weights to each neuron. Since we want to prevent pruning at neurons with low unpruned ratios (i.e., most weights have been pruned), we penalize weights at the neurons with high unpruned ratios.
+
+Similar to the method for determining the number of effective neurons discussed in \autoref{sec:effective}, we calculate the unpruned ratio for each neuron based on the corresponding column of the pruning mask. In the mask, '1' represents an unpruned weight, and by taking the column-wise mean, we determine the ratio of the number of unpruned weights (column-wise sum) to the total number of outgoing weights connected to each neuron (number of rows).
+
+\subsection{SynFlow-Poly}
+As we aim to retain weights with low unpruned ratios, we propose a straightforward adjustment: divide the score of each weight by the unpruned ratio, raised to the power of $k$. Note that the ratios are less than 1, so the scores are increased. The weights with low unpruned ratios will be increased by a larger factor to make up for the low path norms due to the low ratios. A small value ($\epsilon$) must also be added before dividing to avoid dividing by 0.
+
+$k$ is a hyperparameter which can be set to control the percentage of effective neurons. The higher $k$ is, the higher the percentage; however, the overall performance may be affected as we deviate more from the original heuristics. In our experiments, we determined that $k=2$ (SynFlow-Square) and $k=3$ (SynFlow-Cube) are suitable for SynFlow-pruned ResNet-20 and VGG-16 networks. 
+
+The algorithm can be summarised below. ($A^{\circ k}$ denotes Hadamard power.)
+
+\begin{algorithm}[!h]
+\AlgoFontSize
+\DontPrintSemicolon
+
+\SetKwFunction{fGetKth}{GetKthHighest}
+
+\KwIn{Compression ratio $\rho$, number of iterations $n$, power $k$}
+\BlankLine
+$\textbf{w} \gets \fInit()$\;
+$c \gets \mathbf{1}$ \Comment*[r]{Initialize pruning mask to 1s}
+\lFor{$i \gets 1$ \To $n$}{\\
+    \hspace{0.5cm} $\textbf{w}_c \gets \textbf{c} \odot \textbf{w}$  \Comment*[r]{Apply mask}
+    \hspace{0.5cm} $\mathcal{R} \gets \mathbf{1}^\top \Big( \prod_{l=1}^L |w_c^{[l]}| \Big) \mathbf{1}$  \Comment*[r]{Forward pass with an input of 1s}
+    \hspace{0.5cm} $\mu_{\textbf{c}} \gets \frac{\textbf{c}}{\text{rows}(\textbf{c})}$  \Comment*[r]{Compute unpruned ratios}
+    \hspace{0.5cm} $\mathcal{S} \gets \Big(\frac{\partial \mathcal{R}}{\partial \textbf{w}_c} \odot \textbf{w}_c\Big) \odot \big( \mu_{\textbf{c}}^{\ \circ (-k)} + \epsilon \big)$  \Comment*[r]{Compute SynFlow-Poly score}
+    \hspace{0.5cm} $\tau \gets \fGetKth(\mathcal{S}, \ m\rho^{-i/n})$ \Comment*[r]{Find threshold}
+    \hspace{0.5cm} $\textbf{c} \gets (\tau < \mathcal{S})$ \Comment*[f]{Update mask}
+}
+\caption{SynFlow-Poly}
+\label{SynFlow-Poly:algo}
+\end{algorithm}
+
+\subsection{SynFlow-Exp}
+Using the same idea, another approach is to divide the score of each weight by a base $\lambda$ raised to the power of the unpruned ratio. The weights with low unpruned ratios will be decreased by a larger factor to make up for the low path norms due to the low ratios. 
+
+This approach allows control over both the minimum and maximum scores since there is no limit for the SynFlow-Poly score of a weight when the unpruned ratio approaches 0. Similar to $k$, choosing a higher $\lambda$ value will retain a higher percentage of effective neurons with a potential decline in performance.
+
+In our experiments, we determined that $\lambda=10000$ is suitable for SynFlow-pruned ResNet-20 and VGG-16 networks. 
+
+\begin{algorithm}[!h]
+\AlgoFontSize
+\DontPrintSemicolon
+
+\SetKwFunction{fGetKth}{GetKthHighest}
+
+\KwIn{Compression ratio $\rho$, number of iterations $n$, base $\lambda$}
+\BlankLine
+$\textbf{w} \gets \fInit()$\;
+$c \gets \mathbf{1}$ \Comment*[r]{Initialize pruning mask to 1s}
+\lFor{$i \gets 1$ \To $n$}{\\
+    \hspace{0.5cm} $\textbf{w}_c \gets \textbf{c} \odot \textbf{w}$  \Comment*[r]{Apply mask}
+    \hspace{0.5cm} $\mathcal{R} \gets \mathbf{1}^\top \Big( \prod_{l=1}^L |w_c^{[l]}| \Big) \mathbf{1}$  \Comment*[r]{Forward pass with an input of 1s}
+    \hspace{0.5cm} $\mu_{\textbf{c}} \gets \frac{\textbf{c}}{\text{rows}(\textbf{c})}$  \Comment*[r]{Compute unpruned ratios}
+    \hspace{0.5cm} $\mathcal{S} \gets \Big(\frac{\partial \mathcal{R}}{\partial \textbf{w}_c} \odot \textbf{w}_c\Big) \odot \lambda^{-\mu_{\textbf{c}}}$  \Comment*[r]{Compute SynFlow-Exp score}
+    \hspace{0.5cm} $\tau \gets \fGetKth(\mathcal{S}, \ m\rho^{-i/n})$ \Comment*[r]{Find threshold}
+    \hspace{0.5cm} $\textbf{c} \gets (\tau < \mathcal{S})$ \Comment*[f]{Update mask}
+}
+\caption{SynFlow-Exp}
+\label{SynFlow-Exp:algo}
+\end{algorithm}
+
+\section{Results}
+\subsection{SynFlow-Square}
+Based on our results, it is evident that SynFlow-Square significantly increases the number of effective neurons at the expense of the number of effective paths. While we successfully narrowed the gap between the percentages of effective neurons before and after layerwise shuffling in three experiments, demonstrating the avoidance of neuron collapse, the accuracy of the pruned network only drops after shuffling in the case of ResNet-20 at 99\% sparsity. 
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|cc|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{log(Eff. paths)} & \multicolumn{2}{c|}{Effective neurons} & \multicolumn{2}{c|}{Accuracy} \\ \cline{2-7} 
+                  & Before            & After            & Before             & After             & Before        & After         \\ \hline
+ResNet-20 ($\kappa=90\%$)        & 32.70             & 30.96            & 84.80\%     & 98.95\%    & 77.10\%       & 78.75\%       \\ \hline
+ResNet-20 ($\kappa=99\%$)        & 21.27             & 11.41            & 31.72\%     & 33.05\%    & 48.71\%       & 45.40\%       \\ \hline
+VGG-16 ($\kappa=90\%$)           & 33.90             & 33.20            & 92.77\%     & 99.96\%    & 86.12\%       & 88.05\%       \\ \hline
+VGG-16 ($\kappa=99\%$)           & 25.77             & 20.00            & 37.74\%     & 94.62\%    & 81.19\%       & 81.44\%       \\ \hline
+\end{tabular}
+\caption{Effective metrics of SynFlow-Square before and after shuffling}
+\label{table:sf-square}
+\end{table}
+
+A possible explanation is that this is the only case where the number of effective paths before shuffling is still significantly larger than after shuffling. Interestingly, SynFlow-Square outperforms SynFlow for ResNet-20 at 90\% sparsity (\autoref{ablation:table1}).
+
+\subsection{SynFlow-Cube}
+While similar trends can be seen with SynFlow-Cube, we observe a more pronounced reduction in the gap between the percentages of effective neurons before and after layerwise shuffling across all experiments, in line with the use of a higher $k$ value. In addition to the case of ResNet-20 at 99\% sparsity, the performance of the pruned VGG-16 network also worsens after shuffling at the same sparsity.
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|cc|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{log(Eff. paths)} & \multicolumn{2}{c|}{Effective neurons} & \multicolumn{2}{c|}{Accuracy} \\ \cline{2-7} 
+                  & Before            & After            & Before             & After             & Before        & After         \\ \hline
+ResNet-20 ($\kappa=90\%$)        & 31.01             & 29.96            & 94.53\%     & 98.14\%    & 75.47\%       & 78.51\%       \\ \hline
+ResNet-20 ($\kappa=99\%$)        & 18.45             & 9.93            & 37.51\%     & 30.71\%    & 43.37\%       & 36.78\%       \\ \hline
+VGG-16 ($\kappa=90\%$)           & 32.73             & 32.33            & 99.34\%     & 99.90\%    & 86.70\%       & 86.82\%       \\ \hline
+VGG-16 ($\kappa=99\%$)           & 23.46             & 18.68            & 49.56\%     & 91.68\%    & 79.75\%       & 78.80\%       \\ \hline
+\end{tabular}
+\caption{Effective metrics of SynFlow-Cube before and after shuffling}
+\label{table:sf-cube}
+\end{table}
+
+Although this decline may not be surprising, as a similar drop is observed with the original SynFlow algorithm, what stands out is the substantial reduction in the gap between the percentages of effective neurons, while a significant gap in the number of effective paths remains, which may explain the performance drop.
+
+\subsection{SynFlow-Exp}
+With $\lambda=10000$, the performances of SynFlow-Exp-pruned ResNet-20 and VGG-16 networks also drop after shuffling at 99\% sparsity, similar to SynFlow-Cube. Note that this sensitivity to shuffling occurs with a more larger gap between the percentages of effective neurons before and after shuffling compared to SynFlow-Square and SynFlow-Cube.
+
+SynFlow-Exp also outperforms SynFlow for ResNet-20 at both 90\% and 99\% sparsities  (\autoref{ablation:table1}, \autoref{ablation:table2}).
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|cc|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{log(Eff. paths)} & \multicolumn{2}{c|}{Effective neurons} & \multicolumn{2}{c|}{Accuracy} \\ \cline{2-7} 
+                  & Before            & After            & Before             & After             & Before        & After         \\ \hline
+ResNet-20 ($\kappa=90\%$)        & 33.26             & 31.42            & 78.37\%     & 99.09\%    & 77.08\%       & 78.82\%       \\ \hline
+ResNet-20 ($\kappa=99\%$)        & 24.18             & 13.34            & 24.16\%     & 35.26\%    & 56.85\%       & 55.57\%       \\ \hline
+VGG-16 ($\kappa=90\%$)           & 34.37             & 33.33            & 82.80\%     & 99.96\%    & 87.57\%       & 88.36\%       \\ \hline
+VGG-16 ($\kappa=99\%$)           & 28.11             & 21.72            & 28.94\%     & 95.84\%    & 83.24\%       & 82.76\%       \\ \hline
+\end{tabular}
+\caption{Effective metrics of SynFlow-Exp before and after shuffling}
+\label{table:sf-exp}
+\end{table}
+
+\section{Evaluation}
+Based on the results of our experiments, it is clear that a significant increase in the percentage of effective neurons leads to sensitivity to layerwise shuffling at 99\% sparsity. However, even a significant increase in the percentage before shuffling to close the gap with the percentage after shuffling does not produce the same effect at 90\% sparsity. This is evident by the small increase in accuracy after shuffling in VGG-16 networks pruned by SynFlow-Square and SynFlow-Cube, despite the similar effective metrics before and after shuffling.
+
+This suggests that while neuron collapse may explain the improvement in performance of SynFlow-pruned networks after layerwise shuffling at very high sparsities, it does not fully account for the behaviour at lower sparsities. The results of our case study with magnitude pruning lend additional weight to our assertion that neuron collapse, along with the associated number of effective paths and neurons, may not be the exclusive factors contributing to the improved performance observed after shuffling.
+
+\section{Case study: Magnitude pruning}
+Using the same experiments as \autoref{ch:collapse}, we observed that the number of effective paths and neurons remain unaffected after layerwise shuffling when the network is pruned at initialization based on weight magnitude. 
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|cc|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{log(Eff. paths)} & \multicolumn{2}{c|}{Effective neurons} & \multicolumn{2}{c|}{Accuracy} \\ \cline{2-7} 
+                  & Before            & After            & Before             & After             & Before        & After         \\ \hline
+ResNet-20 ($\kappa=90\%$)        & 32.16             & 32.16            & 97.54\%     & 97.39\%    & 77.84\%       & 79.63\%       \\ \hline
+ResNet-20 ($\kappa=99\%$)        & 12.07             & 11.93            & 18.00\%     & 17.78\%    & 53.77\%       & 56.22\%    \\ \hline
+VGG-16 ($\kappa=90\%$)           &  $34.06$         & $34.06$        & 99.97\%    & 99.97\%   &  88.16\%     & 88.74\%      \\ \hline
+VGG-16 ($\kappa=99\%$)           &  $20.63$         & $20.66$        & 63.02\%    & 63.37\%   & 83.09\%       & 83.88\%       \\ \hline
+\end{tabular}
+\caption{Effective metrics of magnitude pruning before and after shuffling}
+\label{table:mag}
+\end{table}
+
+However, there is still a substantial uptick in accuracy after shuffling magnitude-pruned ResNet-20 networks, even though the pruned network, before shuffling, exhibits a marginally higher count of effective paths and neurons. This demonstrates that while the effective metrics provide valuable insights into model performance before and after shuffling, they do not provide a comprehensive explanation.
+
+% Based on these observations, we conducted experiments by incorporating magnitude-based and random scoring into the scoring metrics of the three pruning at initialization methods. This allows us to investigate whether differences in effective metrics and specifically the low number of effective neurons contribute to the insensitivity of these methods to layerwise shuffling.
+
+% Note that while magnitude pruning is unaffected by the number of iterations (which is expected as the weight magnitudes used for scoring remain the same in every iteration), iterative random pruning results in the loss of almost all effective paths and neurons in ResNet-20 networks. A possible explanation, as proposed by \textcite{pham23}, is that in later iterations, the sparsity becomes extremely high. Consequently, random pruning may inadvertently remove critical weights that connect the entire network. To address this, we adopt a similar strategy and restrict random pruning to a specific number of iterations.
+\newpage
+$$\dfrac{\partial y}{\partial w^{[2]}_1} = \dfrac{\partial y}{\partial f^{[2]}} \dfrac{\partial f^{[2]}}{\partial w^{[2]}_1} = a^{[1]}_1$$
+$$\dfrac{\partial y}{\partial w^{[1]}_1} = \dfrac{\partial y}{\partial f^{[2]}} \dfrac{\partial f^{[2]}}{\partial a^{[1]}_1} \dfrac{\partial a^{[1]}_1}{\partial f^{[1]}_1} \dfrac{\partial f^{[1]}_1}{\partial w^{[1]}_1} = w^{[1]}_2$$
+\begin{table}[]
+\centering
+\begin{tabular}{|c|cc|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{Accuracy} \\ \cline{2-3} 
+                  & Before        & After         \\ \hline
+ResNet-20 ($\kappa=90\%$)        & 76.76\%       & 78.02\%       \\ \hline
+ResNet-20 ($\kappa=99\%$)        & 54.66\%       & 59.31\%       \\ \hline
+VGG-16 ($\kappa=90\%$)           & 88.44\%       & 89.10\%       \\ \hline
+VGG-16 ($\kappa=99\%$)           & 84.04\%       & 83.48\%       \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|cc|}
+\hline
+\multirow{2}{*}{} & \multicolumn{2}{c|}{log(Eff. paths)} & \multicolumn{2}{c|}{Effective neurons} & \multicolumn{2}{c|}{Accuracy} \\ \cline{2-7} 
+                  & Before            & After            & Before             & After             & Before        & After         \\ \hline
+ResNet-20 ($\kappa=90\%$)        & 37.34             & 33.49            & 55.60\%     & 95.84\%    & 76.76\%       & 78.02\%       \\ \hline
+ResNet-20 ($\kappa=99\%$)        & 27.18             & 14.12            & 18.14\%     & 32.47\%    & 54.66\%       & 59.31\%       \\ \hline
+VGG-16 ($\kappa=90\%$)           & 37.36             & 34.92            & 61.58\%     & 99.97\%    & 88.44\%       & 89.10\%       \\ \hline
+VGG-16 ($\kappa=99\%$)           & 30.75             & 22.98            & 21.86\%     & 94.41\%    & 84.04\%       & 83.48\%       \\ \hline
+\end{tabular}
+\caption{Effective metrics of SynFlow-Exp before and after shuffling}
+\label{table:sf-exp}
+\end{table}

@@ -1,0 +1,61 @@
+\chapter{Ablation studies}
+\label{ch:ablation}
+\vspace{1em}
+
+\section{Experimental setup}
+The following setup is used for the rest of our experiments (\autoref{ch:collapse} and \autoref{ch:effect}).
+\subsection{Dataset}
+\textcite{frankle21} conducted ablation studies using augmented CIFAR-10, TinyImageNet, and ImageNet datasets. For the purposes of this paper, we focus our experiments exclusively on CIFAR-10 due to resource constraints.
+
+\subsection{Networks}
+\textcite{frankle21} employed a range of network architectures, including LeNet-300-100, ResNet-20, VGG-16, ResNet-18, Modified ResNet-18, and ResNet-20. For CIFAR-10 dataset, the authors used ResNet-20 and VGG-16. In our work, we adopt the same network architectures, utilizing the implementation from \textcite{synflow20}, specifically for the CIFAR-10 dataset.
+
+\subsection{Pruning}
+Similar to \textcite{frankle21}, we use 1 pruning iteration for SNIP and GraSP and 100 iterations for SynFlow. The compression ratio is set at 10$\times$ ($\approx 90\%$ sparsity) and 100$\times$ ($\approx 99\%$ sparsity).
+
+We encountered issues with the code provided in \textcite{synflow20} for inversion. Since inversion is not our primary focus, we did not attempt to address these code issues or conduct experiments to examine the effects of inversion.
+
+\subsection{Training}
+While our configuration differs from that of \textcite{frankle21} and may not yield high accuracy due to resource constraints, it still allows us to perform meaningful comparisons between model performances before and after applying the ablations.
+\begin{table}[h!]
+\begin{tabular}{|ccccccc|}
+\hline
+Epochs & Batch & Optimizer & LR    & LR Drop & Weight Decay & Initialization \\ \hline
+20     & 64    & Adam      & 0.001 & -       & -            & Kaiming Normal \\ \hline
+\end{tabular}
+\end{table}
+
+\section{Results}
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|ccc|ccc|}
+\hline
+        & \multicolumn{3}{c|}{ResNet-20}      & \multicolumn{3}{c|}{VGG-16}         \\ \cline{2-7} 
+        & Original & Reinitialized & Shuffled & Original & Reinitialized & Shuffled \\ \hline
+SNIP    & 76.23\%  & 75.93\%       & 77.16\%  & 87.32\%  & 87.86\%       & 87.98\%  \\ \hline
+GraSP   & 71.84\%  & 78.61\%       & 78.47\%  & 84.13\%  & 87.39\%       & 87.60\%  \\ \hline
+SynFlow & 76.76\%  & 78.15\%       & 78.02\%  & 88.44\%  & 88.21\%       & 89.10\%  \\ \hline
+\end{tabular}
+\caption{Effect of reinitialization and shuffling on top-1 accuracy (90\% sparsity)}
+\label{ablation:table1}
+\end{table}
+\newpage
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|ccc|ccc|}
+\hline
+        & \multicolumn{3}{c|}{ResNet-20}      & \multicolumn{3}{c|}{VGG-16}         \\ \cline{2-7} 
+        & Original & Reinitialized & Shuffled & Original & Reinitialized & Shuffled \\ \hline
+SNIP    & 50.86\%  & 50.99\%       & 58.37\%  & 81.34\%  & 82.42\%       & 82.08\%  \\ \hline
+GraSP   & 51.96\%  & 54.58\%       & 58.12\%  & 81.67\%  & 84.29\%       & 83.69\%  \\ \hline
+SynFlow & 54.66\%  & 55.87\%       & 59.31\%  & 84.04\%  & 84.72\%       & 83.48\%  \\ \hline
+\end{tabular}
+\caption{Effect of reinitialization and shuffling on top-1 accuracy (99\% sparsity)}
+\label{ablation:table2}
+\end{table}
+
+Consistent with the findings of \textcite{frankle21}, as seen in \autoref{ablation:table1} and \autoref{ablation:table2}, we observed that the accuracy of the model after being pruned with SNIP and SynFlow remained similar when weights were reinitialized in our experimental setup. However, there is a sharp increase in the accuracy after reinitialization in the case of GraSP.
+
+We noted an increase in model accuracy when layerwise shuffling the pruning mask for all three pruning techniques, similar to the findings in \textcite{frankle21}. Particularly, the GraSP-pruned ResNet-20 network exhibited a significant improvement in accuracy. 
+
+Our results largely align with the findings of \textcite{frankle21}, demonstrating that the accuracy of SynFlow-pruned networks increases when the pruning mask is shuffled layerwise before training at extreme sparsities. However, while this could have been due to the differences in our experimental setup, a notable contrast emerges, as the accuracy decreases after layerwise shuffling at 99\% sparsity for VGG-16 networks.

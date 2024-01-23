@@ -1,0 +1,24 @@
+\chapter{Scoring adjustments for SNIP and GraSP}
+\label{append:adjustments}
+\vspace*{1em}
+As discussed in \autoref{ch:collapse}, our experiments indicate that neuron collapse is not limited to SynFlow but also affects ResNet-20 networks pruned using SNIP and GraSP. To explore the impact of neuron collapse on these pruning methods, we replicated the experiments detailed in \autoref{ch:effect}, applying the same scoring adjustments.
+
+However, these adjustments did not have any impact on the number of effective paths and neurons in SNIP-pruned ResNet-20 networks.
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|cc|cc|}
+\hline
+        & \multicolumn{2}{c|}{$\log(\text{Effective paths})$} & \multicolumn{2}{c|}{Effective neurons} \\ \cline{2-5} 
+        & Before            & After            & Before             & After             \\ \hline
+SNIP-Square ($\kappa=90\%$)   & $35.73$         & $31.41$        & 3322 (57.13\%)      & 5724 (98.44\%)    \\ \hline
+SNIP-Cube  ($\kappa=90\%$)   & $35.73$         & $31.41$        & 3322 (57.13\%)      & 5724 (98.44\%)    \\ \hline
+SNIP-Exp ($\kappa=90\%$)  & $35.73$         & $31.41$        & 3322 (57.13\%)      & 5724 (98.44\%)  \\ \hline
+SNIP-Square ($\kappa=99\%$)   & $19.96$         & $13.29$        & 898 (15.45\%)      & 1750 (30.09\%)    \\ \hline
+SNIP-Cube  ($\kappa=99\%$)  & $19.96$         & $13.29$        & 898 (15.45\%)      & 1750 (30.09\%)    \\ \hline
+SNIP-Exp ($\kappa=99\%$)  & $19.96$         & $13.29$        & 898 (15.45\%)      & 1750 (30.09\%)  \\ \hline
+\end{tabular}
+\caption{Effective metrics before and after shuffling with variants of SNIP}
+\label{table:snip-variants}
+\end{table}
+
+

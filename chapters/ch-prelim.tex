@@ -1,0 +1,172 @@
+\chapter{Preliminaries}
+\label{ch:prelim}
+\vspace{1em}
+
+\section{Pruning algorithms to be discussed}
+In this section, we will explain the algorithms of SNIP, GraSP, and SynFlow, which were used in \textcite{frankle21}, in greater details. Note that the notations here may be slightly modified from the original papers for the sake of consistency throughout this paper.
+
+\subsection{SNIP (Single-shot Network Pruning)}
+SNIP considers the following optimization problem:
+
+Let $\mathcal{D} = \{(\textbf{x}_i, \textbf{y}_i)\}_{i=1}^n$ be the dataset, $m$ be the total number of parameters, $\textbf{w} \in \mathbb{R}^m$ be the set of parameters, $l$ be the loss function, $\kappa$ be the desired sparsity, and $\textbf{c} \in \{0, 1\}^m$ be the pruning mask.
+$$\mathop{\min}_{\textbf{c}, \textbf{w}} \mathcal{L}(\textbf{c} \odot \textbf{w}; \mathcal{D}) = \mathop{\min}_{\textbf{c}, \textbf{w}} \frac{1}{n} \sum_{i=1}^n l(\textbf{c} \odot \textbf{w}; (\textbf{x}_i, \textbf{y}_i)),$$
+such that $\dfrac{||\textbf{c}||_0}{m} \leq 1-\kappa$ ($L_0$ norm).
+
+With $\textbf{w}$ initialized, we wish to find the optimal pruning mask $\textbf{c}$. SNIP uses a sensitivity-based approach and considers the effect of weight $w_i$ on the loss:
+$$\Delta \mathcal{L}_i(\textbf{w};\mathcal{D}) \approx \dfrac{\partial \mathcal{L}(\textbf{c} \odot \textbf{w}; D)}{\partial c_i} \bigg|_{\textbf{c}=\textbf{1}}$$
+For the sake of simplicity, we will represent the above derivative as $\frac{\partial \mathcal{L}}{\partial c_i}$. SNIP aims to retain the weights with the most effect (positive or negative) on the loss, i.e., highest values of $|\frac{\partial \mathcal{L}}{\partial c_i}|$.
+Let $a_i$ be the incoming activation and $z$ be the neuron before activation connected to weight $w_i$. We can rewrite the derivative as
+$$s_i = \Big|\frac{\partial \mathcal{L}}{\partial c_i}\Big| = \Big|\frac{\partial \mathcal{L}}{\partial z}\frac{\partial z}{\partial c_i}\Big| = \Big|\frac{\partial \mathcal{L}}{\partial z}a_iw_i\Big| = \Big|\frac{\partial \mathcal{L}}{\partial z}\frac{\partial z}{\partial w_i}w_i\Big| = \Big|\frac{\partial \mathcal{L}}{\partial w_i}w_i\Big|.$$
+The scores can be computed together using Hadamard product:
+$$\mathcal{S}(\textbf{w}) = \Big|\frac{\partial \mathcal{L}}{\partial \textbf{w}} \odot \textbf{w}\Big|.$$
+This will be used as the saliency after normalization. SNIP only prunes the network in one iteration (``single-shot'') before training using a mini-batch of data.
+
+The algorithm can be summarized in the pseudocode below.
+
+\begin{algorithm}[!h]
+\AlgoFontSize
+\DontPrintSemicolon
+% \KwGlobal{max. calories of daily intake $\mathcal{C}$}
+% \KwGlobal{calories per bowl of rice $\mathcal{B}$}
+% \BlankLine
+
+\SetKwFunction{fInit}{Init}
+\SetKwFunction{fBatch}{GenRandMinibatch}
+\SetKwFunction{fGetKth}{GetKthHighest}
+
+\KwIn{Sparsity $\kappa$}
+% \KwOut{calories intake}
+\BlankLine
+% \Proc{\fEatRice{$n$}}{
+%   $cal \gets n \times \mathcal{B}$\;
+%   \uIf{$cal \geq \mathcal{C}$}{
+%     \Return $\mathcal{C}$\;
+%   }
+%   \Else{
+%     \Return $cal - \fDoExercise{n}$\;
+%   }
+% }
+$\textbf{w} \gets \fInit()$\;
+$\mathcal{D}^b \gets \fBatch(b)$ \Comment*[r]{Obtain a random mini-batch}
+$\mathcal{S} \gets \Big|\frac{\partial \mathcal{L}(\textbf{w}; \ \mathcal{D}^b)}{\partial \textbf{w}} \odot \textbf{w}\Big|$ \Comment*[r]{Compute SNIP scores}
+$\mathcal{S} \gets \frac{\mathcal{S}}{\sum_{s \in \mathcal{S}} s}$ \Comment*[r]{Normalize the scores} 
+$\tau \gets \fGetKth(\mathcal{S}, \ m(1-\kappa))$ \Comment*[r]{Find threshold}
+$\textbf{c} \gets (\tau < \mathcal{S})$ \Comment*[r]{Update mask}
+% \KwIn{time duration (in minutes) of exercise $t$}
+% \KwOut{calories consumed}
+% \Func{\fDoExercise{$t$}}{
+%   $cal \gets 0$\;
+%   \lFor{$i \gets 1$ \To $t$}{$cal \gets cal + i$}
+%   \Return $cal$\;
+% }
+
+
+\caption{SNIP}
+\label{SNIP:algo}
+\end{algorithm}
+
+\subsection{GraSP (Gradient Signal Preservation)}
+As GraSP aims to preserve gradient flow, it considers the loss reduction after each gradient update. Let $\Delta \mathcal{L}(\textbf{w})$ be this loss reduction and $\eta$ be the learning rate. Using a first-order Taylor expansion, we have:
+\begin{equation*}
+    \begin{split}
+        \Delta \mathcal{L}(\textbf{w}) = \lim_{\eta \to 0} \frac{\mathcal{L}(\textbf{w} + \eta \nabla \mathcal{L}(\textbf{w})) - \mathcal{L}(\textbf{w})}{\eta} &\approx \lim_{\eta \to 0} \frac{(\mathcal{L}(\textbf{w}) + \eta \nabla \mathcal{L}(\textbf{w})^T \nabla \mathcal{L}(\textbf{w})) - \mathcal{L}(\textbf{w})}{\eta}\\
+        & \approx \nabla \mathcal{L}(\textbf{w})^\top \nabla \mathcal{L}(\textbf{w}).
+    \end{split}
+\end{equation*}
+GraSP considers pruning as introducing a perturbation $\boldsymbol{\delta}$ to the weights and measures the effect of the perturbation on the gradient flow:
+\begin{equation*}
+    \begin{split}
+        \textbf{S}(\boldsymbol{\delta}) &= \Delta \mathcal{L}(\textbf{w} + \boldsymbol{\delta}) - \Delta \mathcal{L}(\textbf{w})\\
+        & \approx \nabla \mathcal{L}(\textbf{w} + \boldsymbol{\delta})^\top \nabla \mathcal{L}(\textbf{w} + \boldsymbol{\delta}) - \nabla \mathcal{L}(\textbf{w})^\top \nabla \mathcal{L}(\textbf{w})\\
+        & \approx (\nabla \mathcal{L}(\textbf{w}) + \nabla^2 \mathcal{L}(\textbf{w}) \boldsymbol{\delta})^\top (\nabla \mathcal{L}(\textbf{w}) + \nabla^2 \mathcal{L}(\textbf{w}) \boldsymbol{\delta}) - \nabla \mathcal{L}(\textbf{w})^\top \nabla \mathcal{L}(\textbf{w})\\
+        &= (\nabla \mathcal{L}(\textbf{w})^\top + \boldsymbol{\delta}^\top\nabla^2 \mathcal{L}(\textbf{w})) (\nabla \mathcal{L}(\textbf{w}) + \nabla^2 \mathcal{L}(\textbf{w}) \boldsymbol{\delta}) - \nabla \mathcal{L}(\textbf{w})^\top \nabla \mathcal{L}(\textbf{w})\\
+        &= \nabla \mathcal{L}(\textbf{w})^\top \nabla \mathcal{L}(\textbf{w}) + 2\boldsymbol{\delta}^\top\nabla^2 \mathcal{L}(\textbf{w}) \nabla \mathcal{L}(\textbf{w}) + O(||\boldsymbol{\delta}||^2) - \nabla \mathcal{L}(\textbf{w})^\top \nabla \mathcal{L}(\textbf{w})\\
+        & \approx 2\boldsymbol{\delta}^\top\nabla^2 \mathcal{L}(\textbf{w}) \nabla \mathcal{L}(\textbf{w}) = 2\boldsymbol{\delta}^\top \textbf{H}\textbf{g},
+    \end{split}
+\end{equation*}
+where $\textbf{H}$ is the Hessian and $\textbf{g}$ is the gradient.
+
+When a weight $w_i$ is pruned, $\boldsymbol{\delta} = -w_i\textbf{e}_i$ (as $\textbf{w} - w_i\textbf{e}_i$ is the same as $\textbf{w}$, except $w_i=0$). Hence, the effect of pruning $w_i$, which is the score for the weight given by GraSP, is calculated as (the factor of 2 is dropped):
+$$\textbf{S}(-w_i\textbf{e}_i) = -w_i\textbf{e}_i^\top \textbf{H}\textbf{g} = -w_i(\textbf{H}\textbf{g})_i.$$
+The scores can be computed together using Hadamard product:
+$$\textbf{S}(-\textbf{w}) = - \textbf{w} \odot \textbf{Hg}.$$
+To maximize gradient flow, GraSP retains the weights with the lowest scores, as pruning them will have the least effect (i.e., most beneficial or least harmful) on the gradient flow. Thus, the algorithm \footnote[4]{The Hessian-gradient is computed by building a computation graph. See \textcite{grasp20} for more details.} can be summarized as follows:
+\begin{algorithm}[!h]
+\AlgoFontSize
+\DontPrintSemicolon
+
+\SetKwFunction{fBatch}{GenRandMinibatch}
+\SetKwFunction{fHessianGradient}{HessianGradient}
+\SetKwFunction{fGetKth}{GetKthHighest}
+
+\KwIn{Sparsity $\kappa$}
+\BlankLine
+$\textbf{w} \gets \fInit()$\;
+$\mathcal{D}^b \gets \fBatch(b)$ \Comment*[r]{Obtain a random mini-batch}
+$\textbf{Hg} \gets \fHessianGradient(\textbf{w}, \ \mathcal{D}^b)$ \Comment*[r]{Compute Hessian-gradient product}
+$\mathcal{S} \gets - \textbf{w} \odot \textbf{Hg}$ \Comment*[r]{Compute GraSP scores}
+$\mathcal{S} \gets \frac{\mathcal{S}}{\sum_{s \in \mathcal{S}} s}$ \Comment*[r]{Normalize the scores} 
+$\tau \gets \fGetKth(\mathcal{S}, \ m(1-\kappa))$ \Comment*[r]{Find threshold}
+$\textbf{c} \gets (\tau > \mathcal{S})$ \Comment*[r]{Update mask, keep lowest scores}
+
+\caption{GraSP}
+\label{GraSP:algo}
+\end{algorithm}
+
+\subsection{SynFlow (Iterative Synaptic Flow Pruning)}
+
+\textcite{synflow20} suggests that pruning algorithms should aim to prevent layer collapse, and aims to create a pruning algorithm that reaches ``Maximal Critical Compression”, i.e., ensures that the network is connected even at the most extreme sparsities as far as possible.
+
+The authors showed that this can be achieved with an iterative pruning technique that uses positive synaptic saliency scores that are also conservative (i.e., the sum of the incoming scores is equal to the sum of the outgoing scores in the same layer). \textit{Synaptic saliency} is defined as a general class of gradient-based scores in the form of
+$$\mathcal{S}(\textbf{w}) = \frac{\partial \mathcal{R}}{\partial \textbf{w}} \odot \textbf{w},$$
+where $\mathcal{R}$ is a scalar loss function of the output $\textbf{y}$ (not necessarily the training loss $\mathcal{L}$). This metric is similar to $\big|\frac{\partial \mathcal{L}}{\partial \textbf{w}} \odot \textbf{w}\big|$ used in SNIP and $- \textbf{w} \odot \textbf{Hg} = -\big(\textbf{H}\frac{\partial \mathcal{L}}{\partial \textbf{w}} \big) \odot \textbf{w}$ used in GraSP.
+
+SynFlow uses the following loss function in the algorithm:
+$$\mathcal{R}(\textbf{w}) = \mathbf{1}^\top \Big( \prod_{l=1}^L |w^{[l]}| \Big) \mathbf{1},$$
+where $\mathbf{1}$ is the vector of all ones, $L$ is the number of layers in the network, and $|w^{[l]}|$ is the element-wise absolute value of weights in layer $l$.
+
+Another way to obtain this loss function (and also how it is calculated in their code) is to replace each weight with its absolute value, forward pass with an input of 1s, and compute $\mathcal{R}$ as the sum of the values at the output layer (i.e., logits).
+
+The algorithm can be summarized as shown below. Note that SynFlow requires multiple iterations of pruning and does not consider the data ($\mathcal{D}$).
+\begin{algorithm}[!h]
+\AlgoFontSize
+\DontPrintSemicolon
+
+\SetKwFunction{fBatch}{GenRandMinibatch}
+\SetKwFunction{fHessianGradient}{HessianGradient}
+\SetKwFunction{fGetKth}{GetKthHighest}
+
+\KwIn{Compression ratio $\rho$, number of iterations $n$}
+\BlankLine
+$\textbf{w} \gets \fInit()$\;
+$c \gets \mathbf{1}$ \Comment*[r]{Initialize pruning mask to 1s}
+\lFor{$i \gets 1$ \To $n$}{\\
+    \hspace{0.5cm} $\textbf{w}_c \gets \textbf{c} \odot \textbf{w}$  \Comment*[r]{Apply mask}
+    \hspace{0.5cm} $\mathcal{R} \gets \mathbf{1}^\top \Big( \prod_{l=1}^L |w_c^{[l]}| \Big) \mathbf{1}$  \Comment*[r]{Forward pass with an input of 1s}
+    \hspace{0.5cm} $\mathcal{S} \gets \frac{\partial \mathcal{R}}{\partial \textbf{w}_c} \odot \textbf{w}_c$  \Comment*[r]{Compute SynFlow scores}
+    \hspace{0.5cm} $\tau \gets \fGetKth(\mathcal{S}, \ m\rho^{-i/n})$ \Comment*[r]{Find threshold}
+    \hspace{0.5cm} $\textbf{c} \gets (\tau < \mathcal{S})$ \Comment*[f]{Update mask}
+}
+\caption{SynFlow}
+\label{SynFlow:algo}
+\end{algorithm}
+
+\section{Ablations at Initialization}
+\label{sec:ablation}
+In the study by \textcite{frankle21}, three ablations are examined: reinitialization, inversion, and layerwise shuffling. While our primary focus will be on layerwise shuffling, it is worthwhile to explore the results of the other two ablations. The results of our ablation experiments are shown in \autoref{ch:ablation}.
+
+\subsection{Reinitialization}
+Reinitialization involves generating a fresh set of initial parameter values for the pruned network, drawn from the same distribution as the original network. This is done after pruning, which is based on the original parameter values. The network is then trained with the reinitialized weights. It is observed that the performance of the network pruned with each of the three methods remains similar after reinitialization.
+
+\subsection{Inversion}
+Inversion involves pruning the most important weights instead of the least important weights to evaluate whether the underlying hypotheses of these methods are accurate. As seen in Figure 4 of \textcite{frankle21}, the accuracy drops immediately at low sparsities after inverting the scores for SNIP and GraSP; however, the accuracy remained unaffected for GraSP, which led the authors to question the underlying hypothesis of GraSP's heuristic.
+
+\subsection{Layerwise shuffling}
+Before the network is trained, the pruning mask is subject to random shuffling within each layer. Note that unlike random pruning, layerwise shuffling maintains the same number of retained weights in each layer as the initial pruned network.
+
+\textcite{frankle21} found that the accuracy of all three techniques remains the same or improves after layerwise shuffling. The authors concluded that in essence, these techniques determine layerwise sparsity ratios to obtain a high accuracy, not the specific weights to be pruned. 
+
+\section{Path norm}
+To explain neuron collapse in SynFlow, \textcite{frankle21} shows a connection between SynFlow and path norm. Path norm is a measure based on the norm of the network's weights used to evaluate the information flow along specific paths within the network \autocite{neyshabur15}. Specifically, \textcite{frankle21} considers the $(l_{1,1})$ path norm, which is the sum over all paths of the product of the norm of the weights in each path. It is shown that the weights with the highest SynFlow scores are the ones with the smallest impact on the path norm.
+
+\textcite{frankle21} hypothesizes that due to this connection, when an incoming (or outgoing) weight is pruned from a neuron, all outgoing (or incoming) weights connected to this neuron are in fewer effective paths, which means that the path norm at each of these weights is lower. Hence, these weights are more likely to be pruned next, which leads to each neuron being more likely to be pruned entirely than other pruning methods.

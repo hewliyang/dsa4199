@@ -1,0 +1,51 @@
+%%% enable "DoubleSided" for paper-based submission, i.e. printing, and 
+%%% remove it for the final submission, i.e. electronic thesis
+%\newcommand*{\DoubleSided}{} 
+
+\input{_global_settings.tex}
+
+\begin{document}
+
+\title{Automatic Evaluation of Synthesized Speech}
+
+\author{Hew Li Yang}
+\degree{Bachelor of Science}
+\field{Data Science & Analytics}
+\degreeyear{2021}
+\supervisor{Assistant Professor Markus Kirchberg}
+\examiner{Dr Aaron Yi Rui Low}
+
+\maketitle
+
+% \declaredate{6 October 2023}
+% \declaresign{\RootPicDir /signature.jpg} % remove this if you prefer to sign physically
+% \declarationpage
+
+\begin{frontmatter}
+  % \dedicate{To my delicious friends}
+  % \input{chapters/acknowledgments.tex}
+  \input{chapters/summary.tex}
+  \tableofcontents 
+  \input{chapters/abstract.tex}
+  % \listoffigures
+  % \listoftables
+\end{frontmatter}
+
+\input{chapters/ch-intro.tex}
+\input{chapters/ch-prelim.tex}
+\input{chapters/ch-related.tex}
+\input{chapters/ch-ablation.tex}
+\input{chapters/ch-collapse.tex}
+\input{chapters/ch-effect.tex}
+\input{chapters/ch-concl.tex}
+
+\bookmarksetup{startatroot}
+\printbibliography[heading=bibintoc]
+
+% \appendix
+% \input{chapters/ap-adjustments.tex}
+% \input{chapters/ap-ingredients.tex}
+
+% \input{chapters/ap-publication.tex} 
+
+\end{document}

@@ -1,0 +1,11 @@
+\chapter*{Report summary}
+
+\section*{Nature of the project}
+This project is research-oriented and aims to investigate the behavior of pruning at initialization techniques. The primary objective is to understand the phenomenon of insensitivity to layerwise shuffling observed in pruning techniques like SNIP, GraSP, and SynFlow, and in particular, SynFlow's improved performance post-shuffling at extreme sparsities, as highlighted by \textcite{frankle21}. 
+
+\section*{Scope of the project}
+The scope of the project includes a focus on pruning at initialization techniques, specifically SNIP, GraSP, SynFlow, and our proposed variants. This project explores the behavior of these techniques at extreme sparsity levels, particularly at 90\% and 99\% sparsity. It investigates the effects of novel scoring adjustments (SynFlow-Square, SynFlow-Cube, SynFlow-Exp) on the sensitivity of pruned models to layerwise shuffling. The paper conducts experiments to evaluate and compare the performance of pruned models before and after layerwise shuffling. These experiments involve metrics related to effective neurons, effective paths, and model accuracy.
+
+\section*{Contributions}
+While our project did not yield new mathematical discoveries, it introduced new variants of SynFlow aimed at preventing neuron collapse and improving network performance. These variants outperform SynFlow at 99\% sparsity in both ResNet-20 and VGG-16 networks. All experiments detailed in Chapters \ref{ch:collapse} and \ref{ch:effect} were conducted independently, and the results were thoroughly evaluated. The project's codebase builds upon \textcite{synflow20}, with the relevant parts condensed into a single ipynb file, and includes substantial additions to support the experiments. Comments have been added to the ipynb file to show the parts that are original.
+
